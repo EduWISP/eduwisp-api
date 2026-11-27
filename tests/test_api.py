@@ -128,6 +128,52 @@ def test_famiglia_vede_solo_i_propri_figli(scuola, api_per):
     assert api_per(scuola["docente"]).get(V + "figli").status_code == 404
 
 
+def test_dettaglio_del_figlio(scuola, api_per, richiesta):
+    famiglia = api_per(scuola["genitore"])
+    figlio = scuola["figlio"]
+    app = App.objects.create(
+        organization=scuola["org"], identifier="org.example.atlante", name="Atlante"
+    )
+    AppRule.objects.create(organization=scuola["org"], app=app, student=figlio)
+    d = famiglia.get(V + f"figli/{figlio.pk}").json()
+    assert d["nome"] == "Rossi Anna" and d["classe"]
+    assert {"nome": "Atlante", "icona": None, "solo_per_lui": True} in d["app_consentite"]
+    assert [r["app"] for r in d["richieste"]] == ["Dizionario"]
+    # Il figlio di un'altra famiglia non si vede, e il tentativo è registrato
+    assert famiglia.get(V + f"figli/{scuola['altro'].pk}").status_code == 404
+    assert AuditEvent.objects.filter(action=Action.ACCESS_DENIED).exists()
+    assert api_per(scuola["docente"]).get(V + f"figli/{figlio.pk}").status_code == 404
+
+
+def test_figlio_maggiorenne_senza_consenso(scuola, api_per):
+    from datetime import date
+
+    figlio = scuola["figlio"]
+    figlio.birth_date = date(1982, 1, 1)
+    figlio.save()
+    famiglia = api_per(scuola["genitore"])
+    assert famiglia.get(V + "figli").json() == [
+        {
+            "id": figlio.pk,
+            "nome": "Rossi Anna",
+            "classe": "",
+            "tablet": [],
+            "maggiorenne_senza_consenso": True,
+        }
+    ]
+    assert famiglia.get(V + f"figli/{figlio.pk}").status_code == 404
+    figlio.family_access_granted = True
+    figlio.save()
+    assert famiglia.get(V + "figli").json()[0]["maggiorenne_senza_consenso"] is False
+
+
+def test_pareri_da_dare(scuola, api_per, richiesta):
+    famiglia = api_per(scuola["genitore"])
+    assert famiglia.get(V + "riepilogo").json() == {"richieste_in_attesa": 1, "pareri_da_dare": 1}
+    famiglia.post(V + f"richieste/{richiesta.pk}/parere", {"motivo": "Serve"}, format="json")
+    assert famiglia.get(V + "riepilogo").json() == {"richieste_in_attesa": 1, "pareri_da_dare": 0}
+
+
 def test_account_demo_in_sola_lettura_con_vedi_come(scuola, api_per, richiesta):
     demo = User.objects.create_superuser("demo", password="demo")
     demo.groups.add(Group.objects.create(name="sola-lettura"))

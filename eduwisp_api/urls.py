@@ -24,4 +24,5 @@ urlpatterns = [
     path(P + "richieste/<int:pk>/parere", views.Parere.as_view(), name="parere"),
     path(P + "riepilogo", views.Riepilogo.as_view(), name="riepilogo"),
     path(P + "figli", views.Figli.as_view(), name="figli"),
+    path(P + "figli/<int:pk>", views.Figlio.as_view(), name="figlio"),
 ]

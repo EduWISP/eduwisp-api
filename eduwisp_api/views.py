@@ -9,7 +9,14 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.db.models import Count, Q
 from django.http import Http404
 from django.utils import timezone
-from eduwisp_apps.models import AppRequest, RequestStatus, TemporaryUnlock
+from eduwisp_apps.models import (
+    App,
+    AppRequest,
+    PlatformApp,
+    PlatformStatus,
+    RequestStatus,
+    TemporaryUnlock,
+)
 from eduwisp_apps.requests import (
     add_opinion,
     can_decide,
@@ -29,7 +36,7 @@ from eduwisp_audit.log import record
 from eduwisp_audit.models import Action
 from eduwisp_devices.models import DeviceAssignment
 from eduwisp_school.models import SchoolClass, Student, StudentEnrollment
-from eduwisp_school.queries import classes_for_teacher, students_for_guardian
+from eduwisp_school.queries import classes_for_teacher, linked_students, students_for_guardian
 from eduwisp_users.models import Membership, Role
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -481,13 +488,29 @@ class Riepilogo(Base):
 
     def get(self, request):
         ctx = contesto(request)
-        return Response(
-            {
-                "richieste_in_attesa": richieste_visibili(ctx)
-                .filter(status=RequestStatus.IN_ATTESA)
-                .count()
-            }
+        in_attesa = richieste_visibili(ctx).filter(status=RequestStatus.IN_ATTESA)
+        dati = {"richieste_in_attesa": in_attesa.count()}
+        if ctx.role == Role.GUARDIAN:
+            # Per l'app della famiglia: le richieste su cui non ha ancora dato un parere
+            dati["pareri_da_dare"] = in_attesa.exclude(opinions__guardian=ctx.user).count()
+        return Response(dati)
+
+
+def figli_visibili(ctx):
+    if ctx.role != Role.GUARDIAN:
+        raise Http404
+    return students_for_guardian(ctx.user).filter(organization=ctx.organization)
+
+
+def classe_attuale(studente):
+    iscrizione = (
+        StudentEnrollment.objects.filter(
+            student=studente, school_class__school_year__is_current=True
         )
+        .select_related("school_class__section", "school_class__school_year")
+        .first()
+    )
+    return iscrizione.school_class if iscrizione else None
 
 
 class Figli(Base):
@@ -495,13 +518,7 @@ class Figli(Base):
 
     def get(self, request):
         ctx = contesto(request)
-        if ctx.role != Role.GUARDIAN:
-            raise Http404
-        figli = (
-            students_for_guardian(ctx.user)
-            .filter(organization=ctx.organization)
-            .order_by("display_name")
-        )
+        figli = figli_visibili(ctx).order_by("display_name")
         risultato = []
         for f in figli:
             iscrizione = (
@@ -523,6 +540,69 @@ class Figli(Base):
                     "nome": f.display_name,
                     "classe": str(iscrizione.school_class) if iscrizione else "",
                     "tablet": tablet,
+                    "maggiorenne_senza_consenso": False,
                 }
             )
-        return Response(risultato)
+        # Maggiorenni senza consenso (ADR-0018): solo il nome e il fatto, nessun dato
+        visibili = {f["id"] for f in risultato}
+        for f in linked_students(ctx.user).filter(organization=ctx.organization):
+            if f.pk not in visibili:
+                risultato.append(
+                    {
+                        "id": f.pk,
+                        "nome": f.display_name,
+                        "classe": "",
+                        "tablet": [],
+                        "maggiorenne_senza_consenso": True,
+                    }
+                )
+        return Response(sorted(risultato, key=lambda f: f["nome"]))
+
+
+class Figlio(Base):
+    """Dettaglio di un figlio per l'app della famiglia: tablet, app consentite, richieste."""
+
+    def get(self, request, pk):
+        ctx = contesto(request)
+        f = figli_visibili(ctx).filter(pk=pk).first()
+        if f is None:
+            fuori_ambito(ctx, f"studente {pk}")
+        classe = classe_attuale(f)
+        vietate = PlatformApp.objects.filter(status=PlatformStatus.VIETATA).values_list(
+            "identifier", flat=True
+        )
+        personali = (
+            App.objects.filter(rules__student=f, organization=ctx.organization)
+            .exclude(identifier__in=vietate)
+            .distinct()
+        )
+        app = [
+            {"nome": a.name, "icona": icona(request, a), "solo_per_lui": False}
+            for a in (allowed_apps_for_class(classe) if classe else [])
+        ]
+        app += [
+            {"nome": a.name, "icona": icona(request, a), "solo_per_lui": True}
+            for a in personali.order_by("name")
+        ]
+        tablet = [
+            stato_dispositivo(a.device)
+            for a in DeviceAssignment.objects.filter(
+                student=f, ended_at__isnull=True
+            ).select_related("device")
+        ]
+        richieste = richieste_visibili(ctx).filter(student=f).order_by("-created_at")[:100]
+        return Response(
+            {
+                "id": f.pk,
+                "nome": f.display_name,
+                "classe": str(classe) if classe else "",
+                "anno_scolastico": classe.school_year.label if classe else "",
+                "tablet": tablet,
+                "app_consentite": app,
+                "sblocchi": [
+                    {"app": s.app.name, "fino_alle": s.ends_at.isoformat()}
+                    for s in (active_unlocks(classe) if classe else [])
+                ],
+                "richieste": [richiesta_json(request, ctx, r) for r in richieste],
+            }
+        )
