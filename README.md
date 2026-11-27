@@ -31,8 +31,11 @@ Tutte le chiamate tranne `accedi` vogliono `Authorization: Bearer <token>`; `?me
 
 ```python
 INSTALLED_APPS += ["eduwisp_api"]
+```
+
+```python
 # urls.py
-path("", include("eduwisp_api.urls")),
+urlpatterns += [path("", include("eduwisp_api.urls"))]
 ```
 
 Il ruolo [`ansible-eduwisp`](https://github.com/EduWISP/ansible-eduwisp) lo configura da solo e limita i tentativi di accesso.
