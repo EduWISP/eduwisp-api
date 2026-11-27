@@ -1,0 +1,55 @@
+# publiccode.yml — metadati per il catalogo Developers Italia / metadata for the Developers Italia catalogue
+publiccodeYmlVersion: "0"
+
+name: eduwisp-api
+url: "https://github.com/EduWISP/eduwisp-api"
+landingURL: "https://eduwisp.org/docs/decisioni/0022-app-mobili/"
+platforms:
+  - web
+  - linux
+
+categories:
+  - it-management
+  - it-asset-management
+
+developmentStatus: development
+softwareType: "addon"
+
+intendedAudience:
+  scope:
+    - education
+  countries:
+    - IT
+
+description:
+  it:
+    shortDescription: "EduWISP — API per le app mobili"
+    longDescription: "API JSON per le app mobili del personale della scuola, delle famiglie e degli studenti, con gli stessi permessi del portale. Fa parte di EduWISP, piattaforma open source e gratuita per la gestione dei dispositivi digitali di proprietà delle scuole, con MDM, gestione scolastica, Family Control e prevenzione del cyberbullismo. Il progetto è nelle prime fasi di sviluppo e rispetta come vincolo bloccante il GDPR e la normativa italiana su privacy e minori. Documentazione: https://eduwisp.org/docs/"
+    documentation: "https://eduwisp.org/docs/"
+    features:
+      - "API per le app di personale, famiglie e studenti"
+  en:
+    shortDescription: "EduWISP — Mobile app API"
+    longDescription: "JSON API for the EduWISP staff, family and student mobile apps, with the same permissions as the web portal. Part of EduWISP, a free and open-source platform to manage school-owned digital devices, with MDM, school management, family control and cyberbullying prevention. The project is in early development and treats GDPR and Italian law on privacy and minors as a blocking constraint. Documentation: https://eduwisp.org/docs/en/"
+    documentation: "https://eduwisp.org/docs/en/"
+    features:
+      - "API for staff, family and student apps"
+
+legal:
+  license: AGPL-3.0-or-later
+  mainCopyrightOwner: Michele Salerno
+
+organisation:
+  name: EduWISP
+  uri: "https://github.com/EduWISP"
+
+maintenance:
+  type: community
+  contacts:
+    - name: Michele Salerno
+
+localisation:
+  localisationReady: true
+  availableLanguages:
+    - it
+    - en
