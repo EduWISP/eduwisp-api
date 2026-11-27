@@ -145,6 +145,28 @@ def test_dettaglio_del_figlio(scuola, api_per, richiesta):
     assert api_per(scuola["docente"]).get(V + f"figli/{figlio.pk}").status_code == 404
 
 
+def test_figlio_maggiorenne_senza_consenso(scuola, api_per):
+    from datetime import date
+
+    figlio = scuola["figlio"]
+    figlio.birth_date = date(1982, 1, 1)
+    figlio.save()
+    famiglia = api_per(scuola["genitore"])
+    assert famiglia.get(V + "figli").json() == [
+        {
+            "id": figlio.pk,
+            "nome": "Rossi Anna",
+            "classe": "",
+            "tablet": [],
+            "maggiorenne_senza_consenso": True,
+        }
+    ]
+    assert famiglia.get(V + f"figli/{figlio.pk}").status_code == 404
+    figlio.family_access_granted = True
+    figlio.save()
+    assert famiglia.get(V + "figli").json()[0]["maggiorenne_senza_consenso"] is False
+
+
 def test_pareri_da_dare(scuola, api_per, richiesta):
     famiglia = api_per(scuola["genitore"])
     assert famiglia.get(V + "riepilogo").json() == {"richieste_in_attesa": 1, "pareri_da_dare": 1}

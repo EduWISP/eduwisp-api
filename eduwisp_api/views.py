@@ -36,7 +36,7 @@ from eduwisp_audit.log import record
 from eduwisp_audit.models import Action
 from eduwisp_devices.models import DeviceAssignment
 from eduwisp_school.models import SchoolClass, Student, StudentEnrollment
-from eduwisp_school.queries import classes_for_teacher, students_for_guardian
+from eduwisp_school.queries import classes_for_teacher, linked_students, students_for_guardian
 from eduwisp_users.models import Membership, Role
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -540,9 +540,23 @@ class Figli(Base):
                     "nome": f.display_name,
                     "classe": str(iscrizione.school_class) if iscrizione else "",
                     "tablet": tablet,
+                    "maggiorenne_senza_consenso": False,
                 }
             )
-        return Response(risultato)
+        # Maggiorenni senza consenso (ADR-0018): solo il nome e il fatto, nessun dato
+        visibili = {f["id"] for f in risultato}
+        for f in linked_students(ctx.user).filter(organization=ctx.organization):
+            if f.pk not in visibili:
+                risultato.append(
+                    {
+                        "id": f.pk,
+                        "nome": f.display_name,
+                        "classe": "",
+                        "tablet": [],
+                        "maggiorenne_senza_consenso": True,
+                    }
+                )
+        return Response(sorted(risultato, key=lambda f: f["nome"]))
 
 
 class Figlio(Base):
