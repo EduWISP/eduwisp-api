@@ -21,8 +21,9 @@ API JSON (`/api/app/v1/`) per le app EduWISP del personale della scuola, delle f
 | `POST classi/<id>/sblocchi`, `POST sblocchi/<id>/termina` | sblocco di un'app per la lezione e richiusura (solo docenti della classe) |
 | `GET richieste`, `GET richieste/<id>` | richieste di app visibili (ADR-0021) |
 | `POST richieste/<id>/decisione`, `POST richieste/<id>/parere` | decisione motivata del docente, parere motivato della famiglia |
-| `GET riepilogo` | richieste in attesa, per il controllo periodico dell'app |
+| `GET riepilogo` | richieste in attesa (per la famiglia anche i pareri ancora da dare), per il controllo periodico dell'app |
 | `GET figli` | figli della famiglia |
+| `GET figli/<id>` | un figlio: classe, tablet, app consentite (anche quelle approvate solo per lui), sblocchi in corso e richieste di app |
 | `GET/POST/DELETE vedi-come` | «vedi come» dell'amministratore, in sola lettura e registrato |
 
 Tutte le chiamate tranne `accedi` vogliono `Authorization: Bearer <token>`; `?membership=<id>` sceglie il ruolo per chi ne ha più di uno. Le risposte hanno `Cache-Control: no-store`. Gli account in sola lettura (gruppo `sola-lettura`) e il «vedi come» non possono modificare nulla; gli accessi fuori ambito rispondono 404 e sono registrati.
