@@ -428,6 +428,12 @@ def richiesta_json(request, ctx, r, dettaglio=False):
             else None,
             "puo_decidere": ctx.role == Role.TEACHER and can_decide(ctx.user, r),
             "puo_dare_parere": ctx.role == Role.GUARDIAN and can_give_opinion(ctx.user, r),
+            # Il parere già dato da chi guarda: si può aggiornare finché la richiesta è in attesa
+            "mio_parere": next(
+                (p.reason for p in r.opinions.all() if p.guardian_id == ctx.user.pk), None
+            )
+            if ctx.role == Role.GUARDIAN
+            else None,
         }
     return dati
 
