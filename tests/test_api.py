@@ -213,3 +213,82 @@ def test_vedi_come_solo_per_l_amministratore(scuola, api_per):
     api = api_per(scuola["preside"])
     assert api.get(V + "vedi-come").status_code == 404
     assert api.post(V + "vedi-come", {"ruolo": scuola["m_docente"].pk}).status_code == 404
+
+
+def test_famiglia_isolata_da_altri_studenti_e_istituti(scuola, api_per, richiesta):
+    """La famiglia vede rigorosamente solo i propri figli (ADR-0018): nessun altro studente
+    dello stesso istituto, nessun altro istituto, nessuna classe."""
+    from datetime import date
+
+    from eduwisp_school.models import (
+        Guardian,
+        SchoolClass,
+        SchoolLevel,
+        SchoolYear,
+        Section,
+        Site,
+        Student,
+        StudentEnrollment,
+    )
+    from eduwisp_users.models import Membership, Organization, Role
+
+    org, figlio, altro = scuola["org"], scuola["figlio"], scuola["altro"]
+    # Compagno di classe del figlio, con la sua richiesta di app
+    compagno = Student.objects.create(organization=org, display_name="Verdi Marco")
+    StudentEnrollment.objects.create(organization=org, student=compagno, school_class=scuola["c1a"])
+    r_compagno = AppRequest.objects.create(
+        organization=org, student=compagno, school_class=scuola["c1a"], identifier="org.x.c"
+    )
+    r_altro = AppRequest.objects.create(
+        organization=org, student=altro, school_class=scuola["c1b"], identifier="org.x.a"
+    )
+    # Un altro istituto, con uno studente e una richiesta
+    org2 = Organization.objects.create(name="Istituto Altro", slug="altro")
+    sede = Site.objects.create(organization=org2, name="Sede", level=SchoolLevel.PRIMARIA)
+    anno = SchoolYear.objects.create(
+        organization=org2,
+        label="2026/2027",
+        start_date=date(2026, 9, 1),
+        end_date=date(2027, 6, 30),
+        is_current=True,
+    )
+    sez = Section.objects.create(organization=org2, site=sede, name="C")
+    c2 = SchoolClass.objects.create(organization=org2, school_year=anno, section=sez, year_number=1)
+    estraneo = Student.objects.create(organization=org2, display_name="Neri Sara")
+    StudentEnrollment.objects.create(organization=org2, student=estraneo, school_class=c2)
+    r_org2 = AppRequest.objects.create(
+        organization=org2, student=estraneo, school_class=c2, identifier="org.x.e"
+    )
+    m_org2 = Membership.objects.create(
+        user=User.objects.create_user("altro-genitore"), organization=org2, role=Role.GUARDIAN
+    )
+    Guardian.objects.create(organization=org2, user=m_org2.user, student=estraneo)
+
+    famiglia = api_per(scuola["genitore"])
+    io = famiglia.get(V + "io").json()
+    assert [r["istituto"] for r in io["ruoli"]] == ["Liceo Fittizio"]
+    # Un ruolo di un'altra persona passato come parametro non cambia nulla
+    for q in (f"?membership={m_org2.pk}", f"?membership={scuola['m_docente'].pk}", ""):
+        assert [f["id"] for f in famiglia.get(V + "figli" + q).json()] == [figlio.pk]
+        assert [r["id"] for r in famiglia.get(V + "richieste" + q).json()] == [richiesta.pk]
+        assert famiglia.get(V + "classi" + q).json() == []
+    for s in (compagno, altro, estraneo):
+        assert famiglia.get(V + f"figli/{s.pk}").status_code == 404
+    for r in (r_compagno, r_altro, r_org2):
+        assert famiglia.get(V + f"richieste/{r.pk}").status_code == 404
+        assert (
+            famiglia.post(V + f"richieste/{r.pk}/parere", {"motivo": "x"}, format="json")
+        ).status_code == 404
+    for c in (scuola["c1a"], scuola["c1b"], c2):
+        assert famiglia.get(V + f"classi/{c.pk}").status_code == 404
+    assert famiglia.get(V + "vedi-come").status_code == 404
+    assert famiglia.get(V + "riepilogo").json()["richieste_in_attesa"] == 1
+    # Nel dettaglio del figlio non compare nessun compagno
+    d = famiglia.get(V + f"figli/{figlio.pk}").json()
+    assert "Verdi Marco" not in str(d) and [r["id"] for r in d["richieste"]] == [richiesta.pk]
+    # Ogni tentativo fuori ambito è registrato
+    assert AuditEvent.objects.filter(action=Action.ACCESS_DENIED).count() >= 9
+    # Collegamento disattivato o figlio non più iscritto: non si vede più nulla
+    Guardian.objects.filter(user=scuola["genitore"]).update(is_active=False)
+    assert famiglia.get(V + "figli").json() == []
+    assert famiglia.get(V + f"richieste/{richiesta.pk}").status_code == 404
