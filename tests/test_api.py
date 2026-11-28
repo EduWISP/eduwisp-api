@@ -104,6 +104,14 @@ def test_richieste_decisione_e_parere(scuola, api_per, richiesta):
         V + f"richieste/{richiesta.pk}/parere", {"motivo": "Serve per latino"}, format="json"
     )
     assert r.status_code == 200 and r.json()["pareri_famiglia"][0]["motivo"] == "Serve per latino"
+    assert r.json()["mio_parere"] == "Serve per latino"
+    # Un secondo parere aggiorna il primo
+    r = famiglia.post(
+        V + f"richieste/{richiesta.pk}/parere",
+        {"motivo": "Serve per latino e greco"},
+        format="json",
+    )
+    assert [p["motivo"] for p in r.json()["pareri_famiglia"]] == ["Serve per latino e greco"]
     docente = api_per(scuola["docente"])
     assert docente.get(V + "riepilogo").json() == {"richieste_in_attesa": 1}
     r = docente.post(
